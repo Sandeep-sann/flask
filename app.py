@@ -1,7 +1,7 @@
 from flask import Flask, request, render_template, send_file
 import pdfplumber
 from gtts import gTTS
-import os
+import io
 
 app = Flask(__name__)
 
@@ -9,22 +9,39 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
-@app.route('/extract_text', methods=['POST'])
-def extract_text():
-    pdf_file = request.files['pdf_file']
-    with pdfplumber.open(pdf_file) as pdf:
-        extracted_text = ''
-        for page in pdf.pages:
-            extracted_text += page.extract_text()
-    return extracted_text
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'file' not in request.files:
+        return 'No file part', 400
 
-@app.route('/generate_audio', methods=['POST'])
-def generate_audio():
-    text = request.form['extracted_text']
-    tts = gTTS(text, lang='en')
-    audio_file = 'output.mp3'
-    tts.save(audio_file)
-    return send_file(audio_file, as_attachment=True)
+    file = request.files['file']
+    if file.filename == '':
+        return 'No selected file', 400
+
+    # Extract text from PDF
+    text = ''
+    with pdfplumber.open(file) as pdf:
+        for page in pdf.pages:
+            text += page.extract_text()
+
+    if not text.strip():
+        return 'No text found in PDF', 400
+
+    return text
+
+@app.route('/synthesize', methods=['POST'])
+def synthesize():
+    text = request.form.get('text')
+    if not text:
+        return 'No text provided', 400
+
+    # Convert text to speech
+    tts = gTTS(text, lang='en', slow=True)
+    audio = io.BytesIO()
+    tts.write_to_fp(audio)
+    audio.seek(0)
+
+    return send_file(audio, mimetype='audio/mp3', as_attachment=True, download_name='speech.mp3')
 
 if __name__ == '__main__':
     app.run(debug=True)
